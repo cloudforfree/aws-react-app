@@ -13,7 +13,7 @@ permissions:
 concurrency: deploy   # shares the lock with the deploy workflow
 
 env:
-  AWS_REGION: secrets.AWS_REGION
+  AWS_REGION: 'eu-west-1'
 
 jobs:
   destroy:
