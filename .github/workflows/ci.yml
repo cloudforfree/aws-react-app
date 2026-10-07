@@ -1,0 +1,57 @@
+name: CI (pull requests)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+env:
+  AWS_REGION: secrets.AWS_REGION
+jobs:
+  web:
+    name: Build React app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: web
+        run: |
+          npm install
+          npm run build
+
+  terraform:
+    name: Terraform check and plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Format check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        working-directory: infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=welcome-app/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Validate
+        working-directory: infra
+        run: terraform validate
+
+      - name: Plan (no changes are applied)
+        working-directory: infra
+        run: terraform plan -lock=false -input=false

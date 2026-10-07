@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: deploy   # never run two deploys at once
+
+env:
+  AWS_REGION: secrets.AWS_REGION
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 1. Infrastructure
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform apply
+        working-directory: infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=welcome-app/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="use_lockfile=true"
+          terraform apply -auto-approve
+          echo "BUCKET=$(terraform output -raw site_bucket)" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$(terraform output -raw instance_id)" >> $GITHUB_ENV
+          echo "ALB_URL=$(terraform output -raw alb_url)" >> $GITHUB_ENV
+
+      # 2. Build the React app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build site
+        working-directory: web
+        run: |
+          npm install
+          npm run build
+
+      # 3. Ship it: S3, then tell the instance to pull it via SSM
+      - name: Upload build to S3
+        run: aws s3 sync web/dist s3://$BUCKET/site --delete
+
+      - name: Deploy to EC2
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if aws ssm send-command \
+                --instance-ids "$INSTANCE_ID" \
+                --document-name "AWS-RunShellScript" \
+                --parameters "commands=[\"aws s3 sync s3://$BUCKET/site /usr/share/nginx/html --delete\"]" \
+                --query "Command.CommandId" --output text; then
+              break
+            fi
+            echo "Instance not ready for SSM yet, retrying in 30s..."; sleep 30
+          done
+          echo "Site: $ALB_URL"

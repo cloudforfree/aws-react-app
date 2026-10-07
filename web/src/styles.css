@@ -1,0 +1,20 @@
+:root { color-scheme: light dark; }
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  background: #eef2f0;
+  color: #16302b;
+}
+.page {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  padding: 0 max(1.5rem, 10vw);
+  gap: 1rem;
+}
+h1 { font-size: clamp(3rem, 12vw, 8rem); font-weight: 400; margin: 0; letter-spacing: -0.03em; }
+p { font-size: 1.2rem; line-height: 1.6; max-width: 34ch; margin: 0; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0f1f1c; color: #dbe9e4; }
+}
